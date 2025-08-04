@@ -6,16 +6,32 @@ import sys
 from datetime import datetime
 import uuid
 import pandas as pd
-from firebase_config import initialize_firebase, get_db, create_user, verify_user_credentials, save_job_to_firebase, get_jobs_from_firebase, mark_job_applied, delete_job, get_user_stats, get_global_stats, get_applied_jobs_from_firebase
-from jobspy import scrape_jobs
 import firebase_admin
 from firebase_admin import credentials, firestore, auth
 
-# Initialize Firebase
-initialize_firebase()
+# Add the parent directory to the path so we can import firebase_config
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+try:
+    from firebase_config import initialize_firebase, get_db, create_user, verify_user_credentials, save_job_to_firebase, get_jobs_from_firebase, mark_job_applied, delete_job, get_user_stats, get_global_stats, get_applied_jobs_from_firebase
+    from jobspy import scrape_jobs
+    # Initialize Firebase
+    initialize_firebase()
+except Exception as e:
+    print(f"Firebase initialization error: {e}")
 
 # Simple session storage (in production, use a proper session store)
 sessions = {}
+
+def read_static_file(filename):
+    """Read static files from the root directory"""
+    try:
+        file_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), filename)
+        with open(file_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    except Exception as e:
+        print(f"Error reading file {filename}: {e}")
+        return None
 
 class VercelHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -24,9 +40,25 @@ class VercelHandler(BaseHTTPRequestHandler):
         
         # Serve static files
         if path == '/' or path == '/dashboard':
-            self.serve_file('index.html')
+            content = read_static_file('index.html')
+            if content:
+                self.send_response(200)
+                self.send_header('Content-type', 'text/html')
+                self.end_headers()
+                self.wfile.write(content.encode())
+            else:
+                self.send_response(404)
+                self.end_headers()
         elif path == '/landing':
-            self.serve_file('landing.html')
+            content = read_static_file('landing.html')
+            if content:
+                self.send_response(200)
+                self.send_header('Content-type', 'text/html')
+                self.end_headers()
+                self.wfile.write(content.encode())
+            else:
+                self.send_response(404)
+                self.end_headers()
         elif path == '/api/jobs':
             self.handle_get_jobs()
         elif path == '/api/applied-jobs':
@@ -35,9 +67,11 @@ class VercelHandler(BaseHTTPRequestHandler):
             self.handle_get_stats()
         elif path == '/api/check-session':
             self.handle_check_session()
+        elif path == '/api/health':
+            self.handle_health_check()
         else:
             self.send_response(404)
-            self.end()
+            self.end_headers()
     
     def do_POST(self):
         parsed_url = urlparse(self.path)
@@ -57,20 +91,7 @@ class VercelHandler(BaseHTTPRequestHandler):
             self.handle_delete_job()
         else:
             self.send_response(404)
-            self.end()
-    
-    def serve_file(self, filename):
-        try:
-            with open(filename, 'r') as f:
-                content = f.read()
-            
-            self.send_response(200)
-            self.send_header('Content-type', 'text/html')
             self.end_headers()
-            self.wfile.write(content.encode())
-        except FileNotFoundError:
-            self.send_response(404)
-            self.end()
     
     def handle_get_jobs(self):
         try:
@@ -98,6 +119,7 @@ class VercelHandler(BaseHTTPRequestHandler):
             
             self.send_json_response(jobs)
         except Exception as e:
+            print(f"Error in handle_get_jobs: {e}")
             self.send_error_response(str(e))
     
     def handle_get_applied_jobs(self):
@@ -112,6 +134,7 @@ class VercelHandler(BaseHTTPRequestHandler):
             applied_jobs = get_applied_jobs_from_firebase(user_id)
             self.send_json_response(applied_jobs)
         except Exception as e:
+            print(f"Error in handle_get_applied_jobs: {e}")
             self.send_error_response(str(e))
     
     def handle_get_stats(self):
@@ -129,6 +152,19 @@ class VercelHandler(BaseHTTPRequestHandler):
             
             self.send_json_response(stats)
         except Exception as e:
+            print(f"Error in handle_get_stats: {e}")
+            self.send_error_response(str(e))
+    
+    def handle_health_check(self):
+        """Simple health check endpoint"""
+        try:
+            self.send_json_response({
+                'status': 'healthy',
+                'message': 'Scot4Me API is running',
+                'timestamp': datetime.now().isoformat()
+            })
+        except Exception as e:
+            print(f"Error in handle_health_check: {e}")
             self.send_error_response(str(e))
     
     def handle_check_session(self):
@@ -145,6 +181,7 @@ class VercelHandler(BaseHTTPRequestHandler):
             else:
                 self.send_json_response({'success': False})
         except Exception as e:
+            print(f"Error in handle_check_session: {e}")
             self.send_error_response(str(e))
     
     def handle_signup(self):
@@ -181,6 +218,7 @@ class VercelHandler(BaseHTTPRequestHandler):
             else:
                 self.send_error_response('Failed to create user')
         except Exception as e:
+            print(f"Error in handle_signup: {e}")
             self.send_error_response(str(e))
     
     def handle_login(self):
@@ -216,6 +254,7 @@ class VercelHandler(BaseHTTPRequestHandler):
             else:
                 self.send_error_response('Invalid credentials', 401)
         except Exception as e:
+            print(f"Error in handle_login: {e}")
             self.send_error_response(str(e))
     
     def handle_logout(self):
@@ -226,6 +265,7 @@ class VercelHandler(BaseHTTPRequestHandler):
             
             self.send_json_response({'success': True})
         except Exception as e:
+            print(f"Error in handle_logout: {e}")
             self.send_error_response(str(e))
     
     def handle_search_jobs(self):
@@ -278,6 +318,7 @@ class VercelHandler(BaseHTTPRequestHandler):
                 'message': f'Successfully scraped and saved {jobs_saved} jobs to Firebase'
             })
         except Exception as e:
+            print(f"Error in handle_search_jobs: {e}")
             self.send_error_response(str(e))
     
     def handle_mark_applied(self):
@@ -308,6 +349,7 @@ class VercelHandler(BaseHTTPRequestHandler):
             else:
                 self.send_error_response('Failed to mark job as applied')
         except Exception as e:
+            print(f"Error in handle_mark_applied: {e}")
             self.send_error_response(str(e))
     
     def handle_delete_job(self):
@@ -338,6 +380,7 @@ class VercelHandler(BaseHTTPRequestHandler):
             else:
                 self.send_error_response('Failed to delete job')
         except Exception as e:
+            print(f"Error in handle_delete_job: {e}")
             self.send_error_response(str(e))
     
     def send_json_response(self, data):
