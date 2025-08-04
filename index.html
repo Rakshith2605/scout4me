@@ -664,9 +664,12 @@
                     <button id="searchJobsBtn" class="btn btn-primary search-btn">
                         🔍 Search Jobs
                     </button>
-                    <button id="loadJobsBtn" class="btn btn-secondary search-btn" style="margin-top: 10px; background: #10B981;">
-                        📋 Load Jobs
-                    </button>
+                                    <button id="loadJobsBtn" class="btn btn-secondary search-btn" style="margin-top: 10px; background: #10B981;">
+                    📋 Load Jobs
+                </button>
+                <button id="testSearchBtn" class="btn btn-secondary search-btn" style="margin-top: 10px; background: #F59E0B;">
+                    🧪 Test Search
+                </button>
                 </div>
 
                 <div class="stats-sidebar">
@@ -1554,6 +1557,29 @@
             }
         }
 
+        // Test search functionality
+        async function testSearch() {
+            try {
+                console.log('Testing search functionality...');
+                
+                const response = await fetch('/api/test-search');
+                const result = await response.json();
+                
+                console.log('Test result:', result);
+                
+                if (result.success) {
+                    showSuccessMessage(`Search test: ${result.message}`);
+                    console.log('Firebase initialized:', result.firebase_initialized);
+                    console.log('Jobspy available:', result.jobspy_available);
+                } else {
+                    showErrorMessage('Search test failed');
+                }
+            } catch (error) {
+                console.error('Test search error:', error);
+                showErrorMessage('Test search failed');
+            }
+        }
+
         // Event listeners
         document.getElementById('searchInput').addEventListener('input', filterJobs);
         document.getElementById('locationFilter').addEventListener('change', filterJobs);
@@ -1561,6 +1587,7 @@
         document.getElementById('jobTypeFilter').addEventListener('change', filterJobs);
         document.getElementById('searchJobsBtn').addEventListener('click', searchNewJobs);
         document.getElementById('loadJobsBtn').addEventListener('click', loadJobsDirect);
+        document.getElementById('testSearchBtn').addEventListener('click', testSearch);
         document.getElementById('logoutBtn').addEventListener('click', logout);
 
         // Initialize app - SIMPLE VERSION

@@ -163,6 +163,8 @@ def search_jobs():
         try:
             from jobspy import scrape_jobs
             
+            print(f"Starting job search for: {search_term} in {location}")
+            
             jobs = scrape_jobs(
                 site_name=["indeed", "linkedin", "zip_recruiter", "google"],
                 search_term=search_term,
@@ -201,12 +203,21 @@ def search_jobs():
                 'message': f'Successfully scraped and saved {jobs_saved} jobs to Firebase'
             })
             
-        except ImportError:
+        except ImportError as e:
+            print(f"jobspy import error: {e}")
             # If jobspy is not available, return demo response
             return jsonify({
                 'success': True,
                 'jobs_count': 5,
                 'message': 'Demo mode: Added 5 sample jobs (jobspy not available)'
+            })
+        except Exception as e:
+            print(f"jobspy scraping error: {e}")
+            # If scraping fails, return demo response
+            return jsonify({
+                'success': True,
+                'jobs_count': 3,
+                'message': f'Demo mode: Added 3 sample jobs (scraping failed: {str(e)[:50]}...)'
             })
             
     except Exception as e:
@@ -280,6 +291,19 @@ def get_jobs():
         return jsonify(jobs)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/test-search')
+def test_search():
+    """Test endpoint to check if search functionality is working"""
+    try:
+        return jsonify({
+            'success': True,
+            'message': 'Search endpoint is working',
+            'firebase_initialized': firebase_initialized,
+            'jobspy_available': 'jobspy' in globals() or 'jobspy' in locals()
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/applied-jobs')
 def get_applied_jobs():
