@@ -8,6 +8,8 @@ import uuid
 import pandas as pd
 from firebase_config import initialize_firebase, get_db, create_user, verify_user_credentials, save_job_to_firebase, get_jobs_from_firebase, mark_job_applied, delete_job, get_user_stats, get_global_stats, get_applied_jobs_from_firebase
 from jobspy import scrape_jobs
+import firebase_admin
+from firebase_admin import credentials, firestore, auth
 
 # Initialize Firebase
 initialize_firebase()
