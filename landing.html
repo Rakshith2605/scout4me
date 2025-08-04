@@ -382,10 +382,6 @@
                 const result = await response.json();
 
                 if (result.success) {
-                    // Store session ID
-                    if (result.session_id) {
-                        localStorage.setItem('session_id', result.session_id);
-                    }
                     showSuccess('login', 'Login successful! Redirecting...');
                     setTimeout(() => {
                         window.location.href = '/dashboard';
@@ -436,10 +432,6 @@
                 const result = await response.json();
 
                 if (result.success) {
-                    // Store session ID
-                    if (result.session_id) {
-                        localStorage.setItem('session_id', result.session_id);
-                    }
                     showSuccess('signup', 'Account created successfully! Please sign in.');
                     setTimeout(() => {
                         switchTab('login');

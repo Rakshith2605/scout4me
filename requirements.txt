@@ -1,3 +1,10 @@
+jobspy
 flask
+pandas
 requests
+beautifulsoup4
+lxml
+firebase-admin
+flask-session
+flask-login
 python-dotenv
