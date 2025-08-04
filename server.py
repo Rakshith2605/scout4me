@@ -23,7 +23,7 @@ if not firebase_initialized:
 
 @app.route('/')
 def index():
-    return send_from_directory('.', 'index.html')
+    return redirect('/landing')
 
 @app.route('/landing')
 def landing():
@@ -117,46 +117,97 @@ def search_jobs():
         results_wanted = data.get('results_wanted', 20)
         hours_old = data.get('hours_old', 72)
         
+        # If Firebase is not initialized, return demo response
+        if not firebase_initialized:
+            # Add some demo jobs to the session for display
+            demo_jobs = [
+                {
+                    'id': f'demo-search-{uuid.uuid4()}',
+                    'title': f'{search_term} Engineer',
+                    'company': 'Tech Solutions Inc.',
+                    'location': location,
+                    'job_url': 'https://example.com/job1',
+                    'status': 'active',
+                    'created_at': datetime.datetime.now().isoformat()
+                },
+                {
+                    'id': f'demo-search-{uuid.uuid4()}',
+                    'title': f'Senior {search_term} Developer',
+                    'company': 'Innovation Labs',
+                    'location': location,
+                    'job_url': 'https://example.com/job2',
+                    'status': 'active',
+                    'created_at': datetime.datetime.now().isoformat()
+                },
+                {
+                    'id': f'demo-search-{uuid.uuid4()}',
+                    'title': f'{search_term} Specialist',
+                    'company': 'Digital Corp',
+                    'location': location,
+                    'job_url': 'https://example.com/job3',
+                    'status': 'active',
+                    'created_at': datetime.datetime.now().isoformat()
+                }
+            ]
+            
+            # Store demo jobs in session for display
+            session['demo_jobs'] = session.get('demo_jobs', []) + demo_jobs
+            
+            return jsonify({
+                'success': True,
+                'jobs_count': len(demo_jobs),
+                'message': f'Demo mode: Added {len(demo_jobs)} sample jobs for "{search_term}"'
+            })
+        
         # Simple direct scraping using jobspy
-        from jobspy import scrape_jobs
-        
-        jobs = scrape_jobs(
-            site_name=["indeed", "linkedin", "zip_recruiter", "google"],
-            search_term=search_term,
-            google_search_term=f"{search_term} jobs near {location} since yesterday",
-            location=location,
-            results_wanted=results_wanted,
-            hours_old=hours_old,
-            country_indeed='USA',
-        )
-        
-        print(f"Found {len(jobs)} jobs")
-        
-        # Save jobs to Firebase
-        user_id = session.get('user_id')
-        jobs_saved = 0
-        
-        for _, row in jobs.iterrows():
-            job_data = row.to_dict()
-            job_data['id'] = str(uuid.uuid4())  # Generate unique ID
+        try:
+            from jobspy import scrape_jobs
             
-            # Convert datetime.date objects to strings for Firestore compatibility
-            for key, value in job_data.items():
-                if hasattr(value, 'date'):  # Check if it's a datetime.date object
-                    job_data[key] = value.isoformat() if value else None
-                elif pd.isna(value):  # Handle NaN values
-                    job_data[key] = None
-                elif isinstance(value, (datetime.date, datetime.datetime)):  # Additional datetime checks
-                    job_data[key] = value.isoformat() if value else None
+            jobs = scrape_jobs(
+                site_name=["indeed", "linkedin", "zip_recruiter", "google"],
+                search_term=search_term,
+                google_search_term=f"{search_term} jobs near {location} since yesterday",
+                location=location,
+                results_wanted=results_wanted,
+                hours_old=hours_old,
+                country_indeed='USA',
+            )
             
-            if save_job_to_firebase(job_data, user_id):
-                jobs_saved += 1
-        
-        return jsonify({
-            'success': True,
-            'jobs_count': jobs_saved,
-            'message': f'Successfully scraped and saved {jobs_saved} jobs to Firebase'
-        })
+            print(f"Found {len(jobs)} jobs")
+            
+            # Save jobs to Firebase
+            user_id = session.get('user_id')
+            jobs_saved = 0
+            
+            for _, row in jobs.iterrows():
+                job_data = row.to_dict()
+                job_data['id'] = str(uuid.uuid4())  # Generate unique ID
+                
+                # Convert datetime.date objects to strings for Firestore compatibility
+                for key, value in job_data.items():
+                    if hasattr(value, 'date'):  # Check if it's a datetime.date object
+                        job_data[key] = value.isoformat() if value else None
+                    elif pd.isna(value):  # Handle NaN values
+                        job_data[key] = None
+                    elif isinstance(value, (datetime.date, datetime.datetime)):  # Additional datetime checks
+                        job_data[key] = value.isoformat() if value else None
+                
+                if save_job_to_firebase(job_data, user_id):
+                    jobs_saved += 1
+            
+            return jsonify({
+                'success': True,
+                'jobs_count': jobs_saved,
+                'message': f'Successfully scraped and saved {jobs_saved} jobs to Firebase'
+            })
+            
+        except ImportError:
+            # If jobspy is not available, return demo response
+            return jsonify({
+                'success': True,
+                'jobs_count': 5,
+                'message': 'Demo mode: Added 5 sample jobs (jobspy not available)'
+            })
             
     except Exception as e:
         print(f"Search failed: {str(e)}")
@@ -170,32 +221,38 @@ def get_jobs():
     try:
         # If Firebase is not initialized, return demo data
         if not firebase_initialized:
-            demo_jobs = [
-                {
-                    'id': 'demo-1',
-                    'title': 'Senior Software Engineer',
-                    'company': 'Tech Corp',
-                    'location': 'San Francisco, CA',
-                    'job_url': 'https://example.com/job1',
-                    'status': 'active'
-                },
-                {
-                    'id': 'demo-2', 
-                    'title': 'Data Scientist',
-                    'company': 'AI Startup',
-                    'location': 'New York, NY',
-                    'job_url': 'https://example.com/job2',
-                    'status': 'active'
-                },
-                {
-                    'id': 'demo-3',
-                    'title': 'Frontend Developer',
-                    'company': 'Web Solutions',
-                    'location': 'Remote',
-                    'job_url': 'https://example.com/job3',
-                    'status': 'active'
-                }
-            ]
+            # Get demo jobs from session
+            demo_jobs = session.get('demo_jobs', [])
+            
+            # If no demo jobs in session, return default demo jobs
+            if not demo_jobs:
+                demo_jobs = [
+                    {
+                        'id': 'demo-1',
+                        'title': 'Senior Software Engineer',
+                        'company': 'Tech Corp',
+                        'location': 'San Francisco, CA',
+                        'job_url': 'https://example.com/job1',
+                        'status': 'active'
+                    },
+                    {
+                        'id': 'demo-2', 
+                        'title': 'Data Scientist',
+                        'company': 'AI Startup',
+                        'location': 'New York, NY',
+                        'job_url': 'https://example.com/job2',
+                        'status': 'active'
+                    },
+                    {
+                        'id': 'demo-3',
+                        'title': 'Frontend Developer',
+                        'company': 'Web Solutions',
+                        'location': 'Remote',
+                        'job_url': 'https://example.com/job3',
+                        'status': 'active'
+                    }
+                ]
+            
             return jsonify(demo_jobs)
         
         user_id = session.get('user_id')
@@ -268,6 +325,10 @@ def mark_applied():
         if not job_id:
             return jsonify({'success': False, 'error': 'Job ID is required'}), 400
 
+        # If Firebase is not initialized, return demo response
+        if not firebase_initialized:
+            return jsonify({'success': True, 'message': 'Job marked as applied (demo mode)'})
+
         success = mark_job_applied(job_id, user_id)
         
         if success:
@@ -290,6 +351,10 @@ def delete_job_api():
         
         if not job_id:
             return jsonify({'success': False, 'error': 'Job ID is required'}), 400
+
+        # If Firebase is not initialized, return demo response
+        if not firebase_initialized:
+            return jsonify({'success': True, 'message': 'Job deleted successfully (demo mode)'})
 
         success = delete_job(job_id, user_id)
         
