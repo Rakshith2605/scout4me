@@ -199,15 +199,20 @@ def download_jobs():
 
 @app.route('/api/jobs')
 def get_jobs():
-    if os.path.exists('jobs.csv'):
-        try:
-            with open('jobs.csv', 'r', encoding='utf-8') as file:
-                return file.read()
-        except Exception as e:
-            logger.error(f"Error reading jobs file: {str(e)}")
-            return jsonify({'error': f'Error reading jobs file: {str(e)}'})
-    else:
+    """Return scraped jobs as JSON instead of raw CSV text."""
+    if not os.path.exists('jobs.csv'):
         return jsonify({'error': 'No jobs file found'})
+
+    try:
+        # Convert CSV rows to dictionaries so the frontend can easily consume them
+        with open('jobs.csv', 'r', encoding='utf-8') as file:
+            reader = csv.DictReader(file)
+            jobs = list(reader)
+
+        return jsonify(jobs)
+    except Exception as e:
+        logger.error(f"Error reading jobs file: {str(e)}")
+        return jsonify({'error': f'Error reading jobs file: {str(e)}'})
 
 @app.route('/api/clear-jobs')
 def clear_jobs():
