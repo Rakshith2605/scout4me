@@ -1,62 +1,107 @@
-from flask import Flask, render_template, send_from_directory, jsonify, request
+from flask import Flask, render_template, send_from_directory, jsonify, request, session, redirect, url_for
 import pandas as pd
 import os
-import subprocess
-import sys
+from firebase_config import initialize_firebase, get_db, create_user, verify_user_credentials, verify_user_token, save_job_to_firebase, get_jobs_from_firebase, mark_job_applied, delete_job, get_user_stats, get_global_stats
+from flask_session import Session
+import uuid
+from dotenv import load_dotenv
+import datetime
+
+# Load environment variables
+load_dotenv()
 
 app = Flask(__name__)
+app.secret_key = os.getenv('FLASK_SECRET_KEY', 'your-secret-key-here')
+app.config['SESSION_TYPE'] = 'filesystem'
+Session(app)
+
+# Initialize Firebase
+initialize_firebase()
 
 @app.route('/')
 def index():
     return send_from_directory('.', 'index.html')
 
-@app.route('/jobs.csv')
-def jobs_csv():
-    return send_from_directory('.', 'jobs.csv')
+@app.route('/landing')
+def landing():
+    return send_from_directory('.', 'landing.html')
 
-@app.route('/api/jobs')
-def get_jobs():
-    try:
-        # Read the CSV file
-        df = pd.read_csv('jobs.csv')
-        
-        # Convert to list of dictionaries
-        jobs = df.to_dict('records')
-        
-        # Clean up the data
-        for job in jobs:
-            # Handle NaN values
-            for key, value in job.items():
-                if pd.isna(value):
-                    job[key] = ''
-                else:
-                    job[key] = str(value)
-        
-        return jsonify(jobs)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+@app.route('/dashboard')
+def dashboard():
+    return send_from_directory('.', 'index.html')
 
-@app.route('/api/stats')
-def get_stats():
+@app.route('/api/signup', methods=['POST'])
+def signup():
     try:
-        df = pd.read_csv('jobs.csv')
+        data = request.get_json()
+        name = data.get('name')
+        email = data.get('email')
+        password = data.get('password')
+
+        if not all([name, email, password]):
+            return jsonify({'success': False, 'error': 'All fields are required'}), 400
+
+        # Create user in Firebase
+        user_id = create_user(email, password, name)
         
-        stats = {
-            'total_jobs': len(df),
-            'remote_jobs': len(df[df['is_remote'] == True]),
-            'unique_companies': df['company'].nunique(),
-            'avg_salary': 0
-        }
-        
-        # Calculate average salary
-        salary_jobs = df[(df['min_amount'].notna()) & (df['max_amount'].notna())]
-        if len(salary_jobs) > 0:
-            avg_salary = ((salary_jobs['min_amount'] + salary_jobs['max_amount']) / 2).mean()
-            stats['avg_salary'] = int(avg_salary)
-        
-        return jsonify(stats)
+        if user_id:
+            return jsonify({'success': True, 'message': 'User created successfully'})
+        else:
+            return jsonify({'success': False, 'error': 'Failed to create user'}), 500
+
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    try:
+        data = request.get_json()
+        email = data.get('email')
+        password = data.get('password')
+
+        if not all([email, password]):
+            return jsonify({'success': False, 'error': 'Email and password are required'}), 400
+
+        # Try Firebase authentication first
+        user_info = verify_user_credentials(email, password)
+        
+        if user_info:
+            session['user_id'] = user_info['uid']
+            session['user_name'] = user_info['display_name']
+            return jsonify({'success': True, 'message': 'Login successful'})
+        
+        # Fallback to demo credentials for testing
+        demo_email = os.getenv('DEMO_EMAIL', 'demo@example.com')
+        demo_password = os.getenv('DEMO_PASSWORD', 'password')
+        
+        if email == demo_email and password == demo_password:
+            session['user_id'] = 'demo-user-id'
+            session['user_name'] = 'Demo User'
+            return jsonify({'success': True, 'message': 'Login successful'})
+        else:
+            return jsonify({'success': False, 'error': 'Invalid credentials'}), 401
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/logout', methods=['POST'])
+def logout():
+    session.clear()
+    return jsonify({'success': True})
+
+@app.route('/api/check-session')
+def check_session():
+    user_id = session.get('user_id')
+    user_name = session.get('user_name')
+    
+    if user_id and user_name:
+        return jsonify({
+            'success': True,
+            'user_id': user_id,
+            'user_name': user_name
+        })
+    else:
+        return jsonify({'success': False}), 401
 
 @app.route('/api/search-jobs', methods=['POST'])
 def search_jobs():
@@ -69,71 +114,149 @@ def search_jobs():
         results_wanted = data.get('results_wanted', 20)
         hours_old = data.get('hours_old', 72)
         
-        # Create a temporary Python script for job scraping
-        script_content = f'''
-import csv
-from jobspy import scrape_jobs
-
-try:
-    jobs = scrape_jobs(
-        site_name=["indeed", "linkedin", "zip_recruiter", "google"],
-        search_term="{search_term}",
-        google_search_term="{search_term} jobs near {location} since yesterday",
-        location="{location}",
-        results_wanted={results_wanted},
-        hours_old={hours_old},
-        country_indeed='USA',
-    )
-    
-    print(f"Found {{len(jobs)}} jobs")
-    jobs.to_csv("jobs.csv", quoting=csv.QUOTE_NONNUMERIC, escapechar="\\\\", index=False)
-    print("Jobs saved to jobs.csv")
-    
-except Exception as e:
-    print(f"Error: {{e}}")
-    exit(1)
-'''
+        # Simple direct scraping using jobspy
+        from jobspy import scrape_jobs
         
-        # Write the script to a temporary file
-        with open('temp_scraper.py', 'w') as f:
-            f.write(script_content)
+        jobs = scrape_jobs(
+            site_name=["indeed", "linkedin", "zip_recruiter", "google"],
+            search_term=search_term,
+            google_search_term=f"{search_term} jobs near {location} since yesterday",
+            location=location,
+            results_wanted=results_wanted,
+            hours_old=hours_old,
+            country_indeed='USA',
+        )
         
-        # Run the scraper
-        result = subprocess.run([sys.executable, 'temp_scraper.py'], 
-                              capture_output=True, text=True, timeout=300)
+        print(f"Found {len(jobs)} jobs")
         
-        # Clean up the temporary file
-        os.remove('temp_scraper.py')
+        # Save jobs to Firebase
+        user_id = session.get('user_id')
+        jobs_saved = 0
         
-        if result.returncode == 0:
-            # Read the updated CSV to get job count
-            df = pd.read_csv('jobs.csv')
-            jobs_count = len(df)
+        for _, row in jobs.iterrows():
+            job_data = row.to_dict()
+            job_data['id'] = str(uuid.uuid4())  # Generate unique ID
             
-            return jsonify({
-                'success': True,
-                'jobs_count': jobs_count,
-                'message': f'Successfully scraped {jobs_count} jobs'
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'error': f'Scraping failed: {result.stderr}'
-            }), 500
+            # Convert datetime.date objects to strings for Firestore compatibility
+            for key, value in job_data.items():
+                if hasattr(value, 'date'):  # Check if it's a datetime.date object
+                    job_data[key] = value.isoformat() if value else None
+                elif pd.isna(value):  # Handle NaN values
+                    job_data[key] = None
+                elif isinstance(value, (datetime.date, datetime.datetime)):  # Additional datetime checks
+                    job_data[key] = value.isoformat() if value else None
             
-    except subprocess.TimeoutExpired:
+            if save_job_to_firebase(job_data, user_id):
+                jobs_saved += 1
+        
         return jsonify({
-            'success': False,
-            'error': 'Search timed out. Please try with fewer results.'
-        }), 500
+            'success': True,
+            'jobs_count': jobs_saved,
+            'message': f'Successfully scraped and saved {jobs_saved} jobs to Firebase'
+        })
+            
     except Exception as e:
+        print(f"Search failed: {str(e)}")
         return jsonify({
             'success': False,
             'error': f'Search failed: {str(e)}'
         }), 500
 
+@app.route('/api/jobs')
+def get_jobs():
+    try:
+        user_id = session.get('user_id')
+        
+        # Get filters from query parameters
+        filters = {}
+        if request.args.get('location'):
+            filters['location'] = request.args.get('location')
+        if request.args.get('company'):
+            filters['company'] = request.args.get('company')
+        if request.args.get('job_type'):
+            filters['job_type'] = request.args.get('job_type')
+
+        # If user is authenticated, get their jobs
+        if user_id:
+            jobs = get_jobs_from_firebase(user_id, filters)
+        else:
+            # For testing: get all jobs if no user is authenticated
+            jobs = get_jobs_from_firebase(None, filters)
+            
+        return jsonify(jobs)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/stats')
+def get_stats():
+    try:
+        user_id = session.get('user_id')
+        if not user_id:
+            return jsonify({'error': 'Not authenticated'}), 401
+
+        # Get user-specific stats
+        user_stats = get_user_stats(user_id)
+        
+        # Get global stats
+        global_stats = get_global_stats()
+        
+        # Combine stats
+        stats = {**global_stats, **user_stats}
+        return jsonify(stats)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/mark-applied', methods=['POST'])
+def mark_applied():
+    try:
+        data = request.get_json()
+        job_id = data.get('job_id')
+        user_id = session.get('user_id')
+        
+        if not user_id:
+            return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+        
+        if not job_id:
+            return jsonify({'success': False, 'error': 'Job ID is required'}), 400
+
+        success = mark_job_applied(job_id, user_id)
+        
+        if success:
+            return jsonify({'success': True, 'message': 'Job marked as applied'})
+        else:
+            return jsonify({'success': False, 'error': 'Failed to mark job as applied'}), 500
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/delete-job', methods=['POST'])
+def delete_job_api():
+    try:
+        data = request.get_json()
+        job_id = data.get('job_id')
+        user_id = session.get('user_id')
+        
+        if not user_id:
+            return jsonify({'success': False, 'error': 'Not authenticated'}), 401
+        
+        if not job_id:
+            return jsonify({'success': False, 'error': 'Job ID is required'}), 400
+
+        success = delete_job(job_id, user_id)
+        
+        if success:
+            return jsonify({'success': True, 'message': 'Job deleted successfully'})
+        else:
+            return jsonify({'success': False, 'error': 'Failed to delete job'}), 500
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 if __name__ == '__main__':
+    port = int(os.getenv('PORT', 8000))
+    host = os.getenv('HOST', '0.0.0.0')
+    
     print("Starting Scot4Me Job Board Server...")
-    print("Open your browser and go to: http://localhost:8000")
+    print(f"Open your browser and go to: http://localhost:{port}")
     print("Press Ctrl+C to stop the server")
-    app.run(debug=True, host='0.0.0.0', port=8000) 
+    app.run(debug=True, host=host, port=port) 
