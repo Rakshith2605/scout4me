@@ -182,8 +182,24 @@ def get_jobs():
         else:
             # For testing: get all jobs if no user is authenticated
             jobs = get_jobs_from_firebase(None, filters)
+        
+        # Limit to first 50 jobs to prevent browser issues
+        if len(jobs) > 50:
+            jobs = jobs[:50]
             
         return jsonify(jobs)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/applied-jobs')
+def get_applied_jobs():
+    try:
+        user_id = session.get('user_id')
+        if not user_id:
+            return jsonify({'error': 'Not authenticated'}), 401
+        
+        applied_jobs = get_applied_jobs_from_firebase(user_id)
+        return jsonify(applied_jobs)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

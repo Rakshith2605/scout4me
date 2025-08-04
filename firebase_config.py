@@ -77,12 +77,8 @@ def get_jobs_from_firebase(user_id=None, filters=None):
     try:
         print(f"Getting jobs for user_id: {user_id}")
         
-        # Start with basic query
-        query = db.collection('jobs')
-        
-        # Add status filter only if we want active jobs
-        # For now, let's get all jobs to debug
-        # query = query.where('status', '==', 'active')
+        # Start with basic query - only get active jobs
+        query = db.collection('jobs').where('status', '==', 'active')
         
         # Add user filter only if user_id is provided
         if user_id:
@@ -98,10 +94,20 @@ def get_jobs_from_firebase(user_id=None, filters=None):
         
         docs = query.stream()
         jobs = []
+        
+        # Get user's applied job IDs to exclude them
+        applied_job_ids = set()
+        if user_id:
+            applied_docs = db.collection('users').document(user_id).collection('applied_jobs').stream()
+            applied_job_ids = {doc.id for doc in applied_docs}
+        
         for doc in docs:
             job_data = doc.to_dict()
             job_data['id'] = doc.id
-            jobs.append(job_data)
+            
+            # Skip jobs that user has already applied to
+            if doc.id not in applied_job_ids:
+                jobs.append(job_data)
         
         print(f"Found {len(jobs)} jobs")
         if jobs:
@@ -110,6 +116,34 @@ def get_jobs_from_firebase(user_id=None, filters=None):
         return jobs
     except Exception as e:
         print(f"Error getting jobs: {e}")
+        return []
+
+def get_applied_jobs_from_firebase(user_id):
+    db = get_db()
+    try:
+        if not user_id:
+            return []
+        
+        # Get user's applied jobs
+        applied_docs = db.collection('users').document(user_id).collection('applied_jobs').stream()
+        applied_jobs = []
+        
+        for doc in applied_docs:
+            applied_data = doc.to_dict()
+            applied_data['id'] = doc.id
+            
+            # Get the original job data
+            job_doc = db.collection('jobs').document(doc.id).get()
+            if job_doc.exists:
+                job_data = job_doc.to_dict()
+                job_data['id'] = doc.id
+                job_data['applied_at'] = applied_data.get('applied_at')
+                job_data['application_status'] = applied_data.get('status', 'applied')
+                applied_jobs.append(job_data)
+        
+        return applied_jobs
+    except Exception as e:
+        print(f"Error getting applied jobs: {e}")
         return []
 
 def mark_job_applied(job_id, user_id):
