@@ -16,7 +16,10 @@ app.config['SESSION_TYPE'] = 'filesystem'
 Session(app)
 
 # Initialize Firebase
-initialize_firebase()
+firebase_initialized = initialize_firebase()
+if not firebase_initialized:
+    print("⚠️  Firebase initialization failed. Some features may not work.")
+    print("Please check your environment variables in Render.")
 
 @app.route('/')
 def index():
@@ -165,6 +168,36 @@ def search_jobs():
 @app.route('/api/jobs')
 def get_jobs():
     try:
+        # If Firebase is not initialized, return demo data
+        if not firebase_initialized:
+            demo_jobs = [
+                {
+                    'id': 'demo-1',
+                    'title': 'Senior Software Engineer',
+                    'company': 'Tech Corp',
+                    'location': 'San Francisco, CA',
+                    'job_url': 'https://example.com/job1',
+                    'status': 'active'
+                },
+                {
+                    'id': 'demo-2', 
+                    'title': 'Data Scientist',
+                    'company': 'AI Startup',
+                    'location': 'New York, NY',
+                    'job_url': 'https://example.com/job2',
+                    'status': 'active'
+                },
+                {
+                    'id': 'demo-3',
+                    'title': 'Frontend Developer',
+                    'company': 'Web Solutions',
+                    'location': 'Remote',
+                    'job_url': 'https://example.com/job3',
+                    'status': 'active'
+                }
+            ]
+            return jsonify(demo_jobs)
+        
         user_id = session.get('user_id')
         
         # Get filters from query parameters

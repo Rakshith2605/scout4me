@@ -8,11 +8,15 @@ def initialize_firebase():
         # Check if we're in production (Render) or development
         if os.getenv('RENDER'):  # Render sets this environment variable
             # Use environment variables for production
+            private_key = os.getenv('FIREBASE_PRIVATE_KEY')
+            if private_key:
+                private_key = private_key.replace('\\n', '\n')
+            
             cred = credentials.Certificate({
                 "type": "service_account",
                 "project_id": os.getenv('FIREBASE_PROJECT_ID'),
                 "private_key_id": os.getenv('FIREBASE_PRIVATE_KEY_ID'),
-                "private_key": os.getenv('FIREBASE_PRIVATE_KEY').replace('\\n', '\n'),
+                "private_key": private_key,
                 "client_email": os.getenv('FIREBASE_CLIENT_EMAIL'),
                 "client_id": os.getenv('FIREBASE_CLIENT_ID'),
                 "auth_uri": "https://accounts.google.com/o/oauth2/auth",
@@ -29,6 +33,28 @@ def initialize_firebase():
         return True
     except Exception as e:
         print(f"Firebase initialization error: {e}")
+        
+        # Check which environment variables are missing
+        if os.getenv('RENDER'):
+            print("Checking environment variables:")
+            required_vars = [
+                'FIREBASE_PROJECT_ID',
+                'FIREBASE_PRIVATE_KEY_ID', 
+                'FIREBASE_PRIVATE_KEY',
+                'FIREBASE_CLIENT_EMAIL',
+                'FIREBASE_CLIENT_ID',
+                'FIREBASE_CLIENT_X509_CERT_URL'
+            ]
+            
+            missing_vars = []
+            for var in required_vars:
+                if not os.getenv(var):
+                    missing_vars.append(var)
+            
+            if missing_vars:
+                print(f"Missing environment variables: {', '.join(missing_vars)}")
+                print("Please add these to your Render environment variables")
+        
         return False
 
 # Get Firestore database instance
