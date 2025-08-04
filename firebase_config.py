@@ -192,18 +192,24 @@ def get_applied_jobs_from_firebase(user_id):
 def mark_job_applied(job_id, user_id):
     db = get_db()
     try:
-        # Add to user's applied jobs
-        db.collection('users').document(user_id).collection('applied_jobs').document(job_id).set({
-            'applied_at': firestore.SERVER_TIMESTAMP,
-            'status': 'applied'
-        })
+        # Get the job data first
+        job_doc = db.collection('jobs').document(job_id).get()
+        if not job_doc.exists:
+            print(f"Job {job_id} not found")
+            return False
         
-        # Update job application count
-        job_ref = db.collection('jobs').document(job_id)
-        job_ref.update({
-            'applications': firestore.Increment(1)
-        })
+        job_data = job_doc.to_dict()
+        job_data['id'] = job_id
+        job_data['applied_at'] = firestore.SERVER_TIMESTAMP
+        job_data['application_status'] = 'applied'
         
+        # Add to user's applied jobs with full job data
+        db.collection('users').document(user_id).collection('applied_jobs').document(job_id).set(job_data)
+        
+        # Remove from active jobs (delete from jobs collection)
+        db.collection('jobs').document(job_id).delete()
+        
+        print(f"Job {job_id} moved to applied jobs and removed from active jobs")
         return True
     except Exception as e:
         print(f"Error marking job as applied: {e}")
@@ -212,12 +218,9 @@ def mark_job_applied(job_id, user_id):
 def delete_job(job_id, user_id):
     db = get_db()
     try:
-        # Soft delete - mark as inactive
-        db.collection('jobs').document(job_id).update({
-            'status': 'inactive',
-            'deleted_by': user_id,
-            'deleted_at': firestore.SERVER_TIMESTAMP
-        })
+        # Hard delete - actually remove from database
+        db.collection('jobs').document(job_id).delete()
+        print(f"Job {job_id} deleted from database")
         return True
     except Exception as e:
         print(f"Error deleting job: {e}")

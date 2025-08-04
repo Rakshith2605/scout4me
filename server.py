@@ -147,6 +147,24 @@ def search_jobs():
                     'job_url': 'https://example.com/job3',
                     'status': 'active',
                     'created_at': datetime.datetime.now().isoformat()
+                },
+                {
+                    'id': f'demo-search-{uuid.uuid4()}',
+                    'title': f'Lead {search_term} Manager',
+                    'company': 'Global Tech',
+                    'location': location,
+                    'job_url': 'https://example.com/job4',
+                    'status': 'active',
+                    'created_at': datetime.datetime.now().isoformat()
+                },
+                {
+                    'id': f'demo-search-{uuid.uuid4()}',
+                    'title': f'{search_term} Consultant',
+                    'company': 'Expert Solutions',
+                    'location': location,
+                    'job_url': 'https://example.com/job5',
+                    'status': 'active',
+                    'created_at': datetime.datetime.now().isoformat()
                 }
             ]
             
@@ -351,6 +369,11 @@ def mark_applied():
 
         # If Firebase is not initialized, return demo response
         if not firebase_initialized:
+            # Remove from demo jobs in session
+            demo_jobs = session.get('demo_jobs', [])
+            demo_jobs = [job for job in demo_jobs if job.get('id') != job_id]
+            session['demo_jobs'] = demo_jobs
+            
             return jsonify({'success': True, 'message': 'Job marked as applied (demo mode)'})
 
         success = mark_job_applied(job_id, user_id)
@@ -378,6 +401,11 @@ def delete_job_api():
 
         # If Firebase is not initialized, return demo response
         if not firebase_initialized:
+            # Remove from demo jobs in session
+            demo_jobs = session.get('demo_jobs', [])
+            demo_jobs = [job for job in demo_jobs if job.get('id') != job_id]
+            session['demo_jobs'] = demo_jobs
+            
             return jsonify({'success': True, 'message': 'Job deleted successfully (demo mode)'})
 
         success = delete_job(job_id, user_id)
